@@ -1,0 +1,1047 @@
+name: Build APK
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate project files
+        run: |
+          mkdir -p $(dirname settings.gradle.kts)
+          cat > settings.gradle.kts <<'EOF_FILE'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "FPVPult"
+          include(":app")
+          EOF_FILE
+          mkdir -p $(dirname build.gradle.kts)
+          cat > build.gradle.kts <<'EOF_FILE'
+          plugins {
+              id("com.android.application") version "8.5.2" apply false
+              id("org.jetbrains.kotlin.android") version "1.9.24" apply false
+          }
+          EOF_FILE
+          mkdir -p $(dirname gradle.properties)
+          cat > gradle.properties <<'EOF_FILE'
+          org.gradle.jvmargs=-Xmx2g -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          kotlin.code.style=official
+          EOF_FILE
+          mkdir -p $(dirname app/build.gradle.kts)
+          cat > app/build.gradle.kts <<'EOF_FILE'
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+
+          android {
+              namespace = "com.fpvpult"
+              compileSdk = 34
+
+              defaultConfig {
+                  applicationId = "com.fpvpult"
+                  minSdk = 28
+                  targetSdk = 34
+                  versionCode = 1
+                  versionName = "1.0"
+              }
+
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+          }
+          EOF_FILE
+          mkdir -p $(dirname app/src/main/AndroidManifest.xml)
+          cat > app/src/main/AndroidManifest.xml <<'EOF_FILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+              <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
+              <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+              <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+              <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
+
+              <uses-feature android:name="android.hardware.bluetooth" android:required="true" />
+
+              <application
+                  android:allowBackup="false"
+                  android:label="FPV Pult"
+                  android:theme="@android:style/Theme.Material.NoActionBar">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:configChanges="orientation|screenSize|keyboardHidden"
+                      android:screenOrientation="sensorLandscape">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF_FILE
+          mkdir -p $(dirname app/src/main/res/layout/activity_main.xml)
+          cat > app/src/main/res/layout/activity_main.xml <<'EOF_FILE'
+          <?xml version="1.0" encoding="utf-8"?>
+          <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:background="#101418">
+
+              <!-- ===== Экран подключения ===== -->
+              <LinearLayout
+                  android:id="@+id/connectPanel"
+                  android:layout_width="match_parent"
+                  android:layout_height="match_parent"
+                  android:orientation="vertical"
+                  android:padding="16dp">
+
+                  <TextView
+                      android:id="@+id/statusText"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="Запуск…"
+                      android:textColor="#FFFFFF"
+                      android:textSize="16sp" />
+
+                  <LinearLayout
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:orientation="horizontal">
+
+                      <Button
+                          android:id="@+id/btnDiscoverable"
+                          android:layout_width="0dp"
+                          android:layout_height="wrap_content"
+                          android:layout_weight="1"
+                          android:text="Сделать видимым для ПК" />
+
+                      <Button
+                          android:id="@+id/btnScan"
+                          android:layout_width="0dp"
+                          android:layout_height="wrap_content"
+                          android:layout_weight="1"
+                          android:text="Искать устройства" />
+                  </LinearLayout>
+
+                  <TextView
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:text="Нажми на свой ПК в списке (если не сопряжён — сначала сопряжение, потом подключение)."
+                      android:textColor="#9AA5B1"
+                      android:textSize="12sp" />
+
+                  <ListView
+                      android:id="@+id/deviceList"
+                      android:layout_width="match_parent"
+                      android:layout_height="0dp"
+                      android:layout_weight="1" />
+              </LinearLayout>
+
+              <!-- ===== Пульт ===== -->
+              <LinearLayout
+                  android:id="@+id/controlPanel"
+                  android:layout_width="match_parent"
+                  android:layout_height="match_parent"
+                  android:orientation="horizontal"
+                  android:visibility="gone">
+
+                  <com.fpvpult.StickView
+                      android:id="@+id/leftStick"
+                      android:layout_width="0dp"
+                      android:layout_height="match_parent"
+                      android:layout_weight="1" />
+
+                  <LinearLayout
+                      android:layout_width="0dp"
+                      android:layout_height="match_parent"
+                      android:layout_weight="0.9"
+                      android:gravity="center"
+                      android:orientation="vertical"
+                      android:padding="4dp">
+
+                      <LinearLayout
+                          android:layout_width="match_parent"
+                          android:layout_height="wrap_content"
+                          android:orientation="horizontal">
+
+                          <Button android:id="@+id/b0" style="?android:attr/buttonStyleSmall"
+                              android:layout_width="0dp" android:layout_height="52dp"
+                              android:layout_weight="1" android:text="R" />
+                          <Button android:id="@+id/b1" style="?android:attr/buttonStyleSmall"
+                              android:layout_width="0dp" android:layout_height="52dp"
+                              android:layout_weight="1" android:text="Shift" />
+                      </LinearLayout>
+
+                      <LinearLayout
+                          android:layout_width="match_parent"
+                          android:layout_height="wrap_content"
+                          android:orientation="horizontal">
+
+                          <Button android:id="@+id/b2" style="?android:attr/buttonStyleSmall"
+                              android:layout_width="0dp" android:layout_height="52dp"
+                              android:layout_weight="1" android:text="Space" />
+                          <Button android:id="@+id/b3" style="?android:attr/buttonStyleSmall"
+                              android:layout_width="0dp" android:layout_height="52dp"
+                              android:layout_weight="1" android:text="ЛКМ" />
+                      </LinearLayout>
+
+                      <Button
+                          android:id="@+id/btnTouchpad"
+                          style="?android:attr/buttonStyleSmall"
+                          android:layout_width="match_parent"
+                          android:layout_height="44dp"
+                          android:text="Режим: тачпад" />
+
+                      <LinearLayout
+                          android:layout_width="match_parent"
+                          android:layout_height="wrap_content"
+                          android:orientation="horizontal">
+
+                          <Button android:id="@+id/btnSettings" style="?android:attr/buttonStyleSmall"
+                              android:layout_width="0dp" android:layout_height="44dp"
+                              android:layout_weight="1" android:text="Настр." />
+                          <Button android:id="@+id/btnDisconnect" style="?android:attr/buttonStyleSmall"
+                              android:layout_width="0dp" android:layout_height="44dp"
+                              android:layout_weight="1" android:text="Откл." />
+                      </LinearLayout>
+                  </LinearLayout>
+
+                  <com.fpvpult.StickView
+                      android:id="@+id/rightStick"
+                      android:layout_width="0dp"
+                      android:layout_height="match_parent"
+                      android:layout_weight="1" />
+              </LinearLayout>
+
+              <!-- ===== Тачпад ===== -->
+              <FrameLayout
+                  android:id="@+id/touchpadPanel"
+                  android:layout_width="match_parent"
+                  android:layout_height="match_parent"
+                  android:visibility="gone">
+
+                  <com.fpvpult.TouchpadView
+                      android:id="@+id/touchpad"
+                      android:layout_width="match_parent"
+                      android:layout_height="match_parent"
+                      android:layout_marginBottom="76dp" />
+
+                  <LinearLayout
+                      android:layout_width="match_parent"
+                      android:layout_height="76dp"
+                      android:layout_gravity="bottom"
+                      android:orientation="horizontal">
+
+                      <Button android:id="@+id/btnLmb"
+                          android:layout_width="0dp" android:layout_height="match_parent"
+                          android:layout_weight="1" android:text="ЛКМ" />
+                      <Button android:id="@+id/btnRmb"
+                          android:layout_width="0dp" android:layout_height="match_parent"
+                          android:layout_weight="1" android:text="ПКМ" />
+                  </LinearLayout>
+
+                  <Button
+                      android:id="@+id/btnBackToSticks"
+                      style="?android:attr/buttonStyleSmall"
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:layout_gravity="top|end"
+                      android:layout_margin="8dp"
+                      android:text="Режим: пульт" />
+              </FrameLayout>
+          </FrameLayout>
+          EOF_FILE
+          mkdir -p $(dirname app/src/main/java/com/fpvpult/MainActivity.kt)
+          cat > app/src/main/java/com/fpvpult/MainActivity.kt <<'EOF_FILE'
+          package com.fpvpult
+
+          import android.Manifest
+          import android.annotation.SuppressLint
+          import android.app.Activity
+          import android.app.AlertDialog
+          import android.bluetooth.BluetoothAdapter
+          import android.bluetooth.BluetoothDevice
+          import android.bluetooth.BluetoothManager
+          import android.content.BroadcastReceiver
+          import android.content.Context
+          import android.content.Intent
+          import android.content.IntentFilter
+          import android.content.SharedPreferences
+          import android.content.pm.PackageManager
+          import android.os.Build
+          import android.os.Bundle
+          import android.os.Handler
+          import android.os.Looper
+          import android.view.MotionEvent
+          import android.view.View
+          import android.view.WindowManager
+          import android.widget.*
+          import kotlin.math.abs
+          import kotlin.math.roundToInt
+          import kotlin.math.sign
+
+          @SuppressLint("MissingPermission", "ClickableViewAccessibility")
+          class MainActivity : Activity(), HidController.Listener {
+
+              private lateinit var hid: HidController
+              private lateinit var prefs: SharedPreferences
+              private lateinit var btAdapter: BluetoothAdapter
+              private val handler = Handler(Looper.getMainLooper())
+
+              private lateinit var connectPanel: View
+              private lateinit var controlPanel: View
+              private lateinit var touchpadPanel: View
+              private lateinit var statusText: TextView
+              private lateinit var btnScan: Button
+              private lateinit var leftStick: StickView
+              private lateinit var rightStick: StickView
+              private lateinit var touchpad: TouchpadView
+              private lateinit var auxButtons: List<Button>
+
+              private val devices = ArrayList<BluetoothDevice>()
+              private val labels = ArrayList<String>()
+              private lateinit var listAdapter: ArrayAdapter<String>
+              private var pendingBond: BluetoothDevice? = null
+
+              private var mode = 0            // 0 подключение, 1 пульт, 2 тачпад
+              private var hidStarted = false
+              private var tick = 0
+              private var accX = 0f; private var accY = 0f
+              private var tpX = 0f; private var tpY = 0f
+
+              // кэш настроек
+              private var thrKey = "W"
+              private var sens = 15
+              private var invertY = false
+
+              private val auxKeys = listOf("b0", "b1", "b2", "b3")
+              private val auxDefaults = listOf("R", "Shift", "Space", "ЛКМ")
+
+              // ------------------------------------------------------------------
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                  goImmersive()
+                  setContentView(R.layout.activity_main)
+
+                  prefs = getSharedPreferences("fpv", MODE_PRIVATE)
+                  btAdapter = (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter
+
+                  connectPanel = findViewById(R.id.connectPanel)
+                  controlPanel = findViewById(R.id.controlPanel)
+                  touchpadPanel = findViewById(R.id.touchpadPanel)
+                  statusText = findViewById(R.id.statusText)
+                  btnScan = findViewById(R.id.btnScan)
+                  leftStick = findViewById(R.id.leftStick)
+                  rightStick = findViewById(R.id.rightStick)
+                  touchpad = findViewById(R.id.touchpad)
+                  leftStick.latchY = true
+                  auxButtons = listOf(
+                      findViewById(R.id.b0), findViewById(R.id.b1),
+                      findViewById(R.id.b2), findViewById(R.id.b3)
+                  )
+
+                  hid = HidController(this, this)
+
+                  // --- список устройств ---
+                  listAdapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, labels)
+                  val list = findViewById<ListView>(R.id.deviceList)
+                  list.adapter = listAdapter
+                  list.setOnItemClickListener { _, _, pos, _ -> onDeviceClicked(devices[pos]) }
+
+                  findViewById<Button>(R.id.btnDiscoverable).setOnClickListener {
+                      startActivity(
+                          Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE)
+                              .putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300)
+                      )
+                  }
+                  btnScan.setOnClickListener {
+                      if (btAdapter.isDiscovering) {
+                          btAdapter.cancelDiscovery()
+                          btnScan.text = "Искать устройства"
+                      } else {
+                          refreshList()
+                          btAdapter.startDiscovery()
+                          btnScan.text = "Остановить поиск"
+                      }
+                  }
+
+                  // --- кнопки пульта ---
+                  auxButtons.forEachIndexed { i, btn ->
+                      momentary(btn,
+                          { Keys.apply(hid, auxName(i), true) },
+                          { Keys.apply(hid, auxName(i), false) })
+                  }
+                  findViewById<Button>(R.id.btnTouchpad).setOnClickListener { showMode(2) }
+                  findViewById<Button>(R.id.btnBackToSticks).setOnClickListener { showMode(1) }
+                  findViewById<Button>(R.id.btnSettings).setOnClickListener { showSettings() }
+                  findViewById<Button>(R.id.btnDisconnect).setOnClickListener { hid.disconnect() }
+
+                  // --- тачпад ---
+                  touchpad.onMove = { dx, dy ->
+                      tpX += dx * 2f; tpY += dy * 2f
+                      val ix = tpX.toInt(); val iy = tpY.toInt()
+                      tpX -= ix; tpY -= iy
+                      hid.moveMouse(ix, iy)
+                  }
+                  touchpad.onTap = { clickLeft() }
+                  touchpad.onScroll = { hid.moveMouse(0, 0, it) }
+                  momentary(findViewById(R.id.btnLmb), { hid.setMouseButton(1, true) }, { hid.setMouseButton(1, false) })
+                  momentary(findViewById(R.id.btnRmb), { hid.setMouseButton(2, true) }, { hid.setMouseButton(2, false) })
+
+                  loadPrefs()
+                  refreshAuxLabels()
+
+                  val f = IntentFilter().apply {
+                      addAction(BluetoothDevice.ACTION_FOUND)
+                      addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
+                      addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED)
+                  }
+                  if (Build.VERSION.SDK_INT >= 33) registerReceiver(receiver, f, Context.RECEIVER_EXPORTED)
+                  else registerReceiver(receiver, f)
+
+                  if (!hasPerms()) requestPermissions(neededPerms(), 1)
+                  handler.post(loop)
+              }
+
+              override fun onResume() {
+                  super.onResume()
+                  if (!hasPerms()) return
+                  if (!btAdapter.isEnabled) {
+                      statusText.text = "Включи Bluetooth"
+                      startActivity(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
+                      return
+                  }
+                  if (!hidStarted) { hidStarted = true; hid.start() }
+                  refreshList()
+              }
+
+              override fun onDestroy() {
+                  super.onDestroy()
+                  handler.removeCallbacksAndMessages(null)
+                  try { unregisterReceiver(receiver) } catch (_: Exception) {}
+                  hid.stop()
+              }
+
+              // ------------------------------------------------------------------
+              // Разрешения
+              private fun neededPerms(): Array<String> =
+                  if (Build.VERSION.SDK_INT >= 31) arrayOf(
+                      Manifest.permission.BLUETOOTH_CONNECT,
+                      Manifest.permission.BLUETOOTH_SCAN,
+                      Manifest.permission.BLUETOOTH_ADVERTISE
+                  ) else arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+
+              private fun hasPerms() = neededPerms().all {
+                  checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED
+              }
+
+              // ------------------------------------------------------------------
+              // HidController.Listener (вызывается из фонового потока)
+              override fun onStatus(text: String) {
+                  runOnUiThread { statusText.text = text }
+              }
+
+              override fun onConnection(device: BluetoothDevice?, connected: Boolean) {
+                  runOnUiThread {
+                      if (connected) {
+                          statusText.text = "Подключено: ${device?.name ?: device?.address}"
+                          if (btAdapter.isDiscovering) btAdapter.cancelDiscovery()
+                          showMode(1)
+                      } else {
+                          statusText.text = "Отключено"
+                          showMode(0)
+                      }
+                  }
+              }
+
+              // ------------------------------------------------------------------
+              // Список устройств
+              private fun refreshList() {
+                  devices.clear(); labels.clear()
+                  btAdapter.bondedDevices?.forEach { addDevice(it) }
+                  listAdapter.notifyDataSetChanged()
+              }
+
+              private fun addDevice(d: BluetoothDevice) {
+                  if (devices.any { it.address == d.address }) return
+                  devices.add(d)
+                  val bonded = if (d.bondState == BluetoothDevice.BOND_BONDED) " • сопряжено" else ""
+                  labels.add("${d.name ?: "Без имени"}\n${d.address}$bonded")
+              }
+
+              private fun onDeviceClicked(d: BluetoothDevice) {
+                  if (btAdapter.isDiscovering) { btAdapter.cancelDiscovery(); btnScan.text = "Искать устройства" }
+                  if (d.bondState == BluetoothDevice.BOND_BONDED) {
+                      hid.connect(d)
+                  } else {
+                      pendingBond = d
+                      statusText.text = "Сопряжение с ${d.name ?: d.address}… подтверди код на обоих устройствах"
+                      d.createBond()
+                  }
+              }
+
+              @Suppress("DEPRECATION")
+              private fun deviceOf(i: Intent): BluetoothDevice? =
+                  if (Build.VERSION.SDK_INT >= 33)
+                      i.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
+                  else i.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+
+              private val receiver = object : BroadcastReceiver() {
+                  override fun onReceive(c: Context, i: Intent) {
+                      when (i.action) {
+                          BluetoothDevice.ACTION_FOUND -> deviceOf(i)?.let {
+                              addDevice(it); listAdapter.notifyDataSetChanged()
+                          }
+                          BluetoothDevice.ACTION_BOND_STATE_CHANGED -> {
+                              val d = deviceOf(i)
+                              val st = i.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, -1)
+                              if (d != null && st == BluetoothDevice.BOND_BONDED && pendingBond?.address == d.address) {
+                                  pendingBond = null
+                                  hid.connect(d)
+                              }
+                              refreshList()
+                          }
+                          BluetoothAdapter.ACTION_DISCOVERY_FINISHED -> btnScan.text = "Искать устройства"
+                      }
+                  }
+              }
+
+              // ------------------------------------------------------------------
+              // Режимы
+              private fun showMode(m: Int) {
+                  mode = m
+                  hid.releaseAll()
+                  connectPanel.visibility = if (m == 0) View.VISIBLE else View.GONE
+                  controlPanel.visibility = if (m == 1) View.VISIBLE else View.GONE
+                  touchpadPanel.visibility = if (m == 2) View.VISIBLE else View.GONE
+              }
+
+              // Главный цикл ~100 Гц
+              private val loop = object : Runnable {
+                  override fun run() {
+                      if (mode == 1 && hid.connected) {
+                          // Рыскание: A / D
+                          val ax = leftStick.axisX
+                          hid.setKey(Keys.A, ax < -0.3f)
+                          hid.setKey(Keys.D, ax > 0.3f)
+
+                          // Газ: ШИМ клавишей (10 тиков = 100 мс период, скважность = положение стика)
+                          var thr = leftStick.throttle
+                          if (thr < 0.05f) thr = 0f
+                          val duty = (thr * 10f).roundToInt()
+                          Keys.apply(hid, thrKey, (tick % 10) < duty)
+
+                          // Правый стик -> мышь (квадратичная кривая)
+                          val inv = if (invertY) -1f else 1f
+                          accX += curve(rightStick.axisX) * sens
+                          accY += -curve(rightStick.axisY) * sens * inv
+                          val ix = accX.toInt(); val iy = accY.toInt()
+                          accX -= ix; accY -= iy
+                          hid.moveMouse(ix, iy)
+                          tick++
+                      }
+                      handler.postDelayed(this, 10)
+                  }
+              }
+
+              private fun curve(v: Float): Float {
+                  val a = abs(v)
+                  return if (a < 0.05f) 0f else sign(v) * a * a
+              }
+
+              private fun clickLeft() {
+                  hid.setMouseButton(1, true)
+                  handler.postDelayed({ hid.setMouseButton(1, false) }, 40)
+              }
+
+              // ------------------------------------------------------------------
+              // Кнопки и настройки
+              private fun momentary(v: View, down: () -> Unit, up: () -> Unit) {
+                  v.setOnTouchListener { _, e ->
+                      when (e.actionMasked) {
+                          MotionEvent.ACTION_DOWN -> down()
+                          MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> up()
+                      }
+                      true
+                  }
+              }
+
+              private fun auxName(i: Int) = prefs.getString(auxKeys[i], auxDefaults[i]) ?: auxDefaults[i]
+
+              private fun loadPrefs() {
+                  thrKey = prefs.getString("thr", "W") ?: "W"
+                  sens = prefs.getInt("sens", 15).coerceAtLeast(3)
+                  invertY = prefs.getBoolean("inv", false)
+              }
+
+              private fun refreshAuxLabels() {
+                  auxButtons.forEachIndexed { i, b -> b.text = auxName(i) }
+              }
+
+              private fun showSettings() {
+                  val root = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setPadding(40, 20, 40, 20)
+                  }
+                  val sv = ScrollView(this).apply { addView(root) }
+                  val spinners = ArrayList<Spinner>()
+                  val ids = auxKeys + "thr"
+                  val titles = listOf("Кнопка 1", "Кнопка 2", "Кнопка 3", "Кнопка 4", "Клавиша газа (ШИМ)")
+                  val defs = auxDefaults + "W"
+
+                  ids.forEachIndexed { i, id ->
+                      root.addView(TextView(this).apply { text = titles[i] })
+                      val sp = Spinner(this)
+                      sp.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, Keys.NAMES)
+                      sp.setSelection(Keys.NAMES.indexOf(prefs.getString(id, defs[i])).coerceAtLeast(0))
+                      root.addView(sp); spinners.add(sp)
+                  }
+
+                  root.addView(TextView(this).apply { text = "Скорость курсора (правый стик)" })
+                  val seek = SeekBar(this).apply { max = 40; progress = sens }
+                  root.addView(seek)
+                  val inv = CheckBox(this).apply { text = "Инвертировать ось Y"; isChecked = invertY }
+                  root.addView(inv)
+
+                  AlertDialog.Builder(this)
+                      .setTitle("Настройки")
+                      .setView(sv)
+                      .setNegativeButton("Отмена", null)
+                      .setPositiveButton("OK") { _, _ ->
+                          val e = prefs.edit()
+                          ids.forEachIndexed { i, id -> e.putString(id, Keys.NAMES[spinners[i].selectedItemPosition]) }
+                          e.putInt("sens", seek.progress.coerceAtLeast(3))
+                          e.putBoolean("inv", inv.isChecked)
+                          e.apply()
+                          loadPrefs(); refreshAuxLabels()
+                      }.show()
+              }
+
+              @Suppress("DEPRECATION")
+              private fun goImmersive() {
+                  window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_FULLSCREEN
+                          or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                          or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                          or View.SYSTEM_UI_FLAG_LAYOUT_STABLE)
+              }
+          }
+          EOF_FILE
+          mkdir -p $(dirname app/src/main/java/com/fpvpult/HidController.kt)
+          cat > app/src/main/java/com/fpvpult/HidController.kt <<'EOF_FILE'
+          package com.fpvpult
+
+          import android.annotation.SuppressLint
+          import android.bluetooth.BluetoothAdapter
+          import android.bluetooth.BluetoothDevice
+          import android.bluetooth.BluetoothHidDevice
+          import android.bluetooth.BluetoothHidDeviceAppSdpSettings
+          import android.bluetooth.BluetoothManager
+          import android.bluetooth.BluetoothProfile
+          import android.content.Context
+          import java.util.concurrent.Executors
+
+          private fun b(vararg v: Int) = ByteArray(v.size) { v[it].toByte() }
+
+          /** Комбинированный HID: Report ID 1 = клавиатура (8 байт), Report ID 2 = мышь (4 байта) */
+          private val DESCRIPTOR = b(
+              // ---- Клавиатура ----
+              0x05, 0x01, 0x09, 0x06, 0xA1, 0x01, 0x85, 0x01,
+              0x05, 0x07, 0x19, 0xE0, 0x29, 0xE7, 0x15, 0x00, 0x25, 0x01,
+              0x75, 0x01, 0x95, 0x08, 0x81, 0x02,
+              0x95, 0x01, 0x75, 0x08, 0x81, 0x01,
+              0x95, 0x06, 0x75, 0x08, 0x15, 0x00, 0x25, 0x65,
+              0x05, 0x07, 0x19, 0x00, 0x29, 0x65, 0x81, 0x00,
+              0xC0,
+              // ---- Мышь ----
+              0x05, 0x01, 0x09, 0x02, 0xA1, 0x01, 0x85, 0x02, 0x09, 0x01, 0xA1, 0x00,
+              0x05, 0x09, 0x19, 0x01, 0x29, 0x03, 0x15, 0x00, 0x25, 0x01,
+              0x95, 0x03, 0x75, 0x01, 0x81, 0x02,
+              0x95, 0x01, 0x75, 0x05, 0x81, 0x01,
+              0x05, 0x01, 0x09, 0x30, 0x09, 0x31, 0x09, 0x38,
+              0x15, 0x81, 0x25, 0x7F, 0x75, 0x08, 0x95, 0x03, 0x81, 0x06,
+              0xC0, 0xC0
+          )
+
+          @SuppressLint("MissingPermission")
+          class HidController(private val context: Context, private val listener: Listener) {
+
+              interface Listener {
+                  fun onStatus(text: String)
+                  fun onConnection(device: BluetoothDevice?, connected: Boolean)
+              }
+
+              private val btAdapter: BluetoothAdapter? =
+                  (context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).adapter
+              private val executor = Executors.newSingleThreadExecutor()
+              private var hid: BluetoothHidDevice? = null
+              @Volatile private var host: BluetoothDevice? = null
+
+              val connected: Boolean get() = host != null
+
+              private val pressed = LinkedHashSet<Int>()
+              private var mods = 0
+              private var buttons = 0
+
+              private val callback = object : BluetoothHidDevice.Callback() {
+                  override fun onAppStatusChanged(pluggedDevice: BluetoothDevice?, registered: Boolean) {
+                      listener.onStatus(
+                          if (registered) "HID готов. Выбери ПК в списке или сделай телефон видимым."
+                          else "HID не зарегистрирован (возможно, телефон не поддерживает)"
+                      )
+                  }
+
+                  override fun onConnectionStateChanged(device: BluetoothDevice, state: Int) {
+                      when (state) {
+                          BluetoothProfile.STATE_CONNECTED -> {
+                              host = device
+                              listener.onConnection(device, true)
+                          }
+                          BluetoothProfile.STATE_DISCONNECTED -> {
+                              if (host == null || host?.address == device.address) {
+                                  host = null
+                                  synchronized(this@HidController) { pressed.clear(); mods = 0; buttons = 0 }
+                                  listener.onConnection(device, false)
+                              }
+                          }
+                      }
+                  }
+              }
+
+              fun start() {
+                  val ad = btAdapter
+                  if (ad == null) { listener.onStatus("Bluetooth недоступен"); return }
+                  val ok = ad.getProfileProxy(context, object : BluetoothProfile.ServiceListener {
+                      override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
+                          if (profile == BluetoothProfile.HID_DEVICE) {
+                              hid = proxy as BluetoothHidDevice
+                              register()
+                          }
+                      }
+                      override fun onServiceDisconnected(profile: Int) {
+                          if (profile == BluetoothProfile.HID_DEVICE) hid = null
+                      }
+                  }, BluetoothProfile.HID_DEVICE)
+                  if (!ok) listener.onStatus("Профиль HID Device не поддерживается этим телефоном")
+              }
+
+              private fun register() {
+                  val sdp = BluetoothHidDeviceAppSdpSettings(
+                      "FPV Pult", "Phone FPV controller", "FPV",
+                      BluetoothHidDevice.SUBCLASS1_COMBO, DESCRIPTOR
+                  )
+                  hid?.registerApp(sdp, null, null, executor, callback)
+              }
+
+              fun connect(device: BluetoothDevice) {
+                  listener.onStatus("Подключение к ${device.name ?: device.address}…")
+                  hid?.connect(device)
+              }
+
+              fun disconnect() { host?.let { hid?.disconnect(it) } }
+
+              fun stop() {
+                  releaseAll()
+                  try { hid?.unregisterApp() } catch (_: Exception) {}
+                  try { btAdapter?.closeProfileProxy(BluetoothProfile.HID_DEVICE, hid) } catch (_: Exception) {}
+                  hid = null
+              }
+
+              // ---------- Клавиатура ----------
+              @Synchronized fun setKey(usage: Int, down: Boolean) {
+                  val changed = if (down) pressed.add(usage) else pressed.remove(usage)
+                  if (changed) sendKeyboard()
+              }
+
+              @Synchronized fun setMod(bit: Int, down: Boolean) {
+                  val n = if (down) mods or bit else mods and bit.inv()
+                  if (n != mods) { mods = n; sendKeyboard() }
+              }
+
+              private fun sendKeyboard() {
+                  val h = host ?: return
+                  val d = hid ?: return
+                  val r = ByteArray(8)
+                  r[0] = mods.toByte()
+                  pressed.take(6).forEachIndexed { i, k -> r[2 + i] = k.toByte() }
+                  d.sendReport(h, 1, r)
+              }
+
+              // ---------- Мышь ----------
+              @Synchronized fun setMouseButton(bit: Int, down: Boolean) {
+                  val n = if (down) buttons or bit else buttons and bit.inv()
+                  if (n != buttons) { buttons = n; sendMouse(0, 0, 0) }
+              }
+
+              @Synchronized fun moveMouse(dx: Int, dy: Int, wheel: Int = 0) {
+                  if (dx == 0 && dy == 0 && wheel == 0) return
+                  sendMouse(dx, dy, wheel)
+              }
+
+              private fun sendMouse(dx: Int, dy: Int, wheel: Int) {
+                  val h = host ?: return
+                  val d = hid ?: return
+                  val r = byteArrayOf(
+                      buttons.toByte(),
+                      dx.coerceIn(-127, 127).toByte(),
+                      dy.coerceIn(-127, 127).toByte(),
+                      wheel.coerceIn(-127, 127).toByte()
+                  )
+                  d.sendReport(h, 2, r)
+              }
+
+              @Synchronized fun releaseAll() {
+                  pressed.clear(); mods = 0; buttons = 0
+                  sendKeyboard(); sendMouse(0, 0, 0)
+              }
+          }
+
+          /** Названия клавиш для настроек и преобразование в HID-коды */
+          object Keys {
+              val NAMES: List<String> =
+                  listOf("—", "ЛКМ", "ПКМ", "СКМ", "Shift", "Ctrl", "Alt", "Space", "Enter", "Esc", "Tab") +
+                      ('A'..'Z').map { it.toString() } + ('0'..'9').map { it.toString() }
+
+              const val A = 0x04
+              const val D = 0x07
+
+              private fun usage(name: String): Int? = when {
+                  name == "Space" -> 0x2C
+                  name == "Enter" -> 0x28
+                  name == "Esc" -> 0x29
+                  name == "Tab" -> 0x2B
+                  name.length == 1 && name[0] in 'A'..'Z' -> 0x04 + (name[0] - 'A')
+                  name.length == 1 && name[0] in '1'..'9' -> 0x1E + (name[0] - '1')
+                  name == "0" -> 0x27
+                  else -> null
+              }
+
+              fun apply(h: HidController, name: String, down: Boolean) {
+                  when (name) {
+                      "—" -> {}
+                      "ЛКМ" -> h.setMouseButton(1, down)
+                      "ПКМ" -> h.setMouseButton(2, down)
+                      "СКМ" -> h.setMouseButton(4, down)
+                      "Shift" -> h.setMod(0x02, down)
+                      "Ctrl" -> h.setMod(0x01, down)
+                      "Alt" -> h.setMod(0x04, down)
+                      else -> usage(name)?.let { h.setKey(it, down) }
+                  }
+              }
+          }
+          EOF_FILE
+          mkdir -p $(dirname app/src/main/java/com/fpvpult/StickView.kt)
+          cat > app/src/main/java/com/fpvpult/StickView.kt <<'EOF_FILE'
+          package com.fpvpult
+
+          import android.content.Context
+          import android.graphics.Canvas
+          import android.graphics.Paint
+          import android.graphics.RectF
+          import android.util.AttributeSet
+          import android.view.MotionEvent
+          import android.view.View
+          import kotlin.math.hypot
+          import kotlin.math.min
+
+          /**
+           * Виртуальный стик. axisX / axisY в диапазоне -1..1 (вверх = +).
+           * latchY = true  -> ось Y фиксируется (газ), X возвращается в центр.
+           * latchY = false -> обычный стик с возвратом в центр по обеим осям.
+           */
+          class StickView @JvmOverloads constructor(
+              context: Context, attrs: AttributeSet? = null
+          ) : View(context, attrs) {
+
+              var latchY: Boolean = false
+                  set(v) { field = v; axisY = if (v) -1f else 0f; invalidate() }
+
+              var axisX = 0f; private set
+              var axisY = 0f; private set
+
+              /** Газ 0..1 (имеет смысл при latchY = true) */
+              val throttle: Float get() = (axisY + 1f) / 2f
+
+              private var offY = 0f
+              private val basePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                  color = 0xFF2A3440.toInt(); style = Paint.Style.FILL
+              }
+              private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                  color = 0xFF55657A.toInt(); style = Paint.Style.STROKE; strokeWidth = 4f
+              }
+              private val knobPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                  color = 0xFFE8EEF5.toInt(); style = Paint.Style.FILL
+              }
+              private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                  color = 0xFF101418.toInt(); textAlign = Paint.Align.CENTER; textSize = 36f
+              }
+
+              private fun radius() = min(width, height) / 2f * 0.85f
+
+              override fun onDraw(c: Canvas) {
+                  val cx = width / 2f; val cy = height / 2f; val r = radius()
+                  if (latchY) {
+                      val rect = RectF(cx - r * 0.55f, cy - r, cx + r * 0.55f, cy + r)
+                      c.drawRoundRect(rect, r * 0.3f, r * 0.3f, basePaint)
+                      c.drawRoundRect(rect, r * 0.3f, r * 0.3f, ringPaint)
+                  } else {
+                      c.drawCircle(cx, cy, r, basePaint)
+                      c.drawCircle(cx, cy, r, ringPaint)
+                  }
+                  val kx = cx + axisX * r
+                  val ky = cy - axisY * r
+                  c.drawCircle(kx, ky, r * 0.28f, knobPaint)
+                  if (latchY) c.drawText("${(throttle * 100).toInt()}%", kx, ky + 12f, textPaint)
+              }
+
+              override fun onTouchEvent(e: MotionEvent): Boolean {
+                  val cy = height / 2f; val r = radius()
+                  when (e.actionMasked) {
+                      MotionEvent.ACTION_DOWN -> {
+                          parent?.requestDisallowInterceptTouchEvent(true)
+                          // для газа — относительный захват, чтобы не было скачка
+                          offY = if (latchY) axisY - (-(e.y - cy) / r) else 0f
+                          update(e)
+                      }
+                      MotionEvent.ACTION_MOVE -> update(e)
+                      MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                          axisX = 0f
+                          if (!latchY) axisY = 0f
+                          invalidate()
+                      }
+                  }
+                  return true
+              }
+
+              private fun update(e: MotionEvent) {
+                  val cx = width / 2f; val cy = height / 2f; val r = radius()
+                  var nx = (e.x - cx) / r
+                  var ny = -(e.y - cy) / r + offY
+                  if (latchY) {
+                      nx = nx.coerceIn(-1f, 1f); ny = ny.coerceIn(-1f, 1f)
+                  } else {
+                      val len = hypot(nx, ny)
+                      if (len > 1f) { nx /= len; ny /= len }
+                  }
+                  axisX = nx; axisY = ny
+                  invalidate()
+              }
+          }
+          EOF_FILE
+          mkdir -p $(dirname app/src/main/java/com/fpvpult/TouchpadView.kt)
+          cat > app/src/main/java/com/fpvpult/TouchpadView.kt <<'EOF_FILE'
+          package com.fpvpult
+
+          import android.content.Context
+          import android.graphics.Canvas
+          import android.graphics.Paint
+          import android.util.AttributeSet
+          import android.view.MotionEvent
+          import android.view.View
+          import kotlin.math.abs
+
+          /** Тачпад: 1 палец — движение, тап — клик, 2 пальца — прокрутка. */
+          class TouchpadView @JvmOverloads constructor(
+              context: Context, attrs: AttributeSet? = null
+          ) : View(context, attrs) {
+
+              var onMove: ((Float, Float) -> Unit)? = null
+              var onTap: (() -> Unit)? = null
+              var onScroll: ((Int) -> Unit)? = null
+
+              private var lastX = 0f; private var lastY = 0f
+              private var downT = 0L; private var moved = 0f
+              private var maxP = 0; private var scrollAcc = 0f
+
+              private val bg = Paint().apply { color = 0xFF1B232C.toInt() }
+              private val txt = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                  color = 0xFF55657A.toInt(); textAlign = Paint.Align.CENTER; textSize = 40f
+              }
+
+              override fun onDraw(c: Canvas) {
+                  c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bg)
+                  c.drawText("ТАЧПАД", width / 2f, height / 2f, txt)
+              }
+
+              private fun avgX(e: MotionEvent, skip: Int): Float {
+                  var s = 0f; var n = 0
+                  for (i in 0 until e.pointerCount) { if (i == skip) continue; s += e.getX(i); n++ }
+                  return s / n
+              }
+              private fun avgY(e: MotionEvent, skip: Int): Float {
+                  var s = 0f; var n = 0
+                  for (i in 0 until e.pointerCount) { if (i == skip) continue; s += e.getY(i); n++ }
+                  return s / n
+              }
+
+              override fun onTouchEvent(e: MotionEvent): Boolean {
+                  when (e.actionMasked) {
+                      MotionEvent.ACTION_DOWN -> {
+                          lastX = e.x; lastY = e.y; downT = e.eventTime
+                          moved = 0f; maxP = 1; scrollAcc = 0f
+                      }
+                      MotionEvent.ACTION_POINTER_DOWN -> {
+                          maxP = maxOf(maxP, e.pointerCount)
+                          lastX = avgX(e, -1); lastY = avgY(e, -1)
+                      }
+                      MotionEvent.ACTION_MOVE -> {
+                          val ax = avgX(e, -1); val ay = avgY(e, -1)
+                          val dx = ax - lastX; val dy = ay - lastY
+                          lastX = ax; lastY = ay
+                          moved += abs(dx) + abs(dy)
+                          if (e.pointerCount >= 2) {
+                              scrollAcc += dy
+                              if (abs(scrollAcc) > 30f) {
+                                  onScroll?.invoke(if (scrollAcc > 0) 1 else -1)
+                                  scrollAcc = 0f
+                              }
+                          } else onMove?.invoke(dx, dy)
+                      }
+                      MotionEvent.ACTION_POINTER_UP -> {
+                          val skip = e.actionIndex
+                          lastX = avgX(e, skip); lastY = avgY(e, skip)
+                      }
+                      MotionEvent.ACTION_UP -> {
+                          if (maxP == 1 && moved < 20f && e.eventTime - downT < 250) onTap?.invoke()
+                      }
+                  }
+                  return true
+              }
+          }
+          EOF_FILE
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
+      - name: Build
+        run: gradle assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FPV-Pult-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
